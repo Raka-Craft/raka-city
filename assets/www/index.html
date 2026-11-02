@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Raka City</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#0b1020; height:100%; touch-action:none; font-family: Arial, sans-serif; }
+  #c { position:fixed; inset:0; display:block; }
+  .hud { position:fixed; z-index:5; color:#fff; text-shadow:0 2px 6px rgba(0,0,0,.7); pointer-events:none; }
+  #speed { right:16px; bottom:120px; font-size:30px; font-weight:bold; text-align:right; }
+  #speed small { display:block; font-size:12px; letter-spacing:2px; opacity:.85; }
+  #stars { top:12px; right:16px; font-size:30px; letter-spacing:3px; color:#ffd54a; text-align:right; }
+  #stars small { display:block; font-size:11px; color:#fff; letter-spacing:1px; }
+  #money { top:12px; left:16px; font-size:22px; font-weight:bold; color:#7bf79b; }
+  #money small { display:block; font-size:11px; color:#fff; letter-spacing:1px; }
+  #msg { top:22%; left:0; right:0; text-align:center; font-size:34px; font-weight:bold; opacity:0; transition:opacity .25s; }
+  #bustWrap { top:64px; left:50%; transform:translateX(-50%); width:240px; display:none; }
+  #bustWrap label { font-size:12px; letter-spacing:2px; display:block; text-align:center; margin-bottom:4px; }
+  #bustBarBg { height:12px; background:rgba(255,255,255,.25); border-radius:6px; overflow:hidden; }
+  #bustBar { height:100%; width:0%; background:#ff5252; }
+  .btn { position:fixed; z-index:6; width:74px; height:74px; border-radius:50%; background:rgba(20,20,34,.55);
+         border:2px solid rgba(255,255,255,.5); color:#fff; font-size:30px; display:flex; align-items:center; justify-content:center;
+         user-select:none; -webkit-user-select:none; }
+  .btn.on { background:rgba(220,38,38,.65); }
+  #bL { left:16px; bottom:24px; } #bR { left:104px; bottom:24px; }
+  #bGas { right:16px; bottom:24px; background:rgba(22,130,60,.55); }
+  #bBrk { right:104px; bottom:24px; background:rgba(160,40,40,.55); }
+  #start { position:fixed; inset:0; z-index:10; background:linear-gradient(160deg,#141033,#3b0f2e 60%,#12081f);
+           color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; }
+  #start h1 { font-size:44px; margin:0 0 4px; letter-spacing:2px; }
+  #start h1 span { color:#ff5252; }
+  #start p { max-width:520px; font-size:15px; line-height:1.55; opacity:.92; }
+  #playBtn { margin-top:14px; background:linear-gradient(90deg,#7e22ce,#dc2626); color:#fff; border:none; border-radius:14px;
+             font-size:22px; font-weight:bold; padding:16px 52px; }
+  #end { position:fixed; inset:0; z-index:10; background:rgba(10,4,16,.82); color:#fff; display:none;
+         flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; }
+  #end h1 { font-size:42px; color:#ff5252; margin:0 0 8px; letter-spacing:3px; }
+  #againBtn { margin-top:14px; background:linear-gradient(90deg,#7e22ce,#dc2626); color:#fff; border:none; border-radius:14px;
+              font-size:20px; font-weight:bold; padding:14px 44px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud" id="money">$0<small>UANG DARI AKSI NEKAT</small></div>
+<div class="hud" id="stars"><small>LEVEL BURONAN</small><span id="starTxt"></span></div>
+<div class="hud" id="speed">0<small>KM/JAM</small></div>
+<div class="hud" id="bustWrap"><label>POLISI MENANGKAPMU...</label><div id="bustBarBg"><div id="bustBar"></div></div></div>
+<div class="hud" id="msg"></div>
+
+<div class="btn" id="bL">&#9664;</div>
+<div class="btn" id="bR">&#9654;</div>
+<div class="btn" id="bBrk">&#9660;</div>
+<div class="btn" id="bGas">&#9650;</div>
+
+<div id="start">
+  <h1>RAKA <span>CITY</span></h1>
+  <p>Game kota terbuka buatan Raka. Setir mobilmu keliling kota, kumpulkan uang dari aksi nekat
+     (nyaris nabrak dan ngebut), tapi hati-hati: menabrak gedung atau menyerempet orang menaikkan level buronan,
+     dan polisi akan mengejarmu. Kalau polisi berhasil menempel terus saat kamu lambat, kamu tertangkap.</p>
+  <p>Kontrol HP: tombol panah di layar. Kontrol keyboard: WASD / tombol panah.</p>
+  <button id="playBtn">MAIN</button>
+</div>
+
+<div id="end">
+  <h1>TERTANGKAP</h1>
+  <p id="endTxt">Polisi berhasil menangkapmu.</p>
+  <button id="againBtn">MAIN LAGI</button>
+</div>
+
+<script src="three.min.js"></script>
+<script>
+(function(){
+'use strict';
+// ---------------- dasar ----------------
+var canvas = document.getElementById('c');
+var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87b5e0);
+scene.fog = new THREE.Fog(0x87b5e0, 90, 260);
+var camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 600);
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3d4a35, 0.95));
+var sun = new THREE.DirectionalLight(0xfff2d8, 0.85);
+sun.position.set(60, 110, 40);
+scene.add(sun);
+
+// ---------------- kota ----------------
+var BLOCK = 40, ROADW = 16, N = 6;                 // 6x6 blok
+var PITCH = BLOCK + ROADW;                          // 56
+var HALF = (N * PITCH) / 2;                         // kota dari -168..168
+var colliders = [];                                 // {minX,maxX,minZ,maxZ}
+
+function groundTexture() {
+  var s = 2048, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  var g = cv.getContext('2d');
+  var px = s / (HALF * 2);                          // piksel per meter
+  g.fillStyle = '#565d66'; g.fillRect(0, 0, s, s);  // aspal dasar
+  function X(w) { return (w + HALF) * px; }
+  // trotoar per blok
+  for (var i = 0; i < N; i++) for (var j = 0; j < N; j++) {
+    var bx = -HALF + ROADW / 2 + i * PITCH, bz = -HALF + ROADW / 2 + j * PITCH;
+    g.fillStyle = '#9aa0a8';
+    g.fillRect(X(bx - 2), X(bz - 2), (BLOCK + 4) * px, (BLOCK + 4) * px);
+  }
+  // garis marka putus-putus di tengah jalan
+  g.strokeStyle = '#f7d54a'; g.lineWidth = Math.max(2, 0.35 * px);
+  g.setLineDash([4 * px * 0.4, 4 * px * 0.4]);
+  for (var k = 0; k <= N; k++) {
+    var c = -HALF + k * PITCH;
+    g.beginPath(); g.moveTo(X(c), 0); g.lineTo(X(c), s); g.stroke();
+    g.beginPath(); g.moveTo(0, X(c)); g.lineTo(s, X(c)); g.stroke();
+  }
+  var t = new THREE.CanvasTexture(cv);
+  return t;
+}
+var ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(HALF * 2 + ROADW, HALF * 2 + ROADW),
+  new THREE.MeshLambertMaterial({ map: groundTexture() })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+// rumput luar kota
+var grass = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.MeshLambertMaterial({ color: 0x4d7c43 }));
+grass.rotation.x = -Math.PI / 2; grass.position.y = -0.05;
+scene.add(grass);
+
+function buildingTexture(base) {
+  var cv = document.createElement('canvas'); cv.width = 128; cv.height = 256;
+  var g = cv.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, 128, 256);
+  for (var y = 0; y < 10; y++) for (var x = 0; x < 4; x++) {
+    var lit = Math.random() < 0.45;
+    g.fillStyle = lit ? '#ffe9a3' : '#2b3a4a';
+    g.fillRect(10 + x * 30, 12 + y * 24, 18, 14);
+  }
+  return new THREE.CanvasTexture(cv);
+}
+var bColors = ['#8d6e63', '#78909c', '#a1887f', '#90a4ae', '#bcaaa4', '#6d8ea0', '#9c7a5b'];
+var bTex = bColors.map(buildingTexture);
+var bMats = bTex.map(function(t){ return new THREE.MeshLambertMaterial({ map: t }); });
+var roofMat = new THREE.MeshLambertMaterial({ color: 0x37474f });
+
+for (var i = 0; i < N; i++) for (var j = 0; j < N; j++) {
+  var bx = -HALF + ROADW / 2 + i * PITCH, bz = -HALF + ROADW / 2 + j * PITCH;
+  for (var a = 0; a < 2; a++) for (var b = 0; b < 2; b++) {
+    if (Math.random() < 0.12) continue;              // sesekali lahan kosong
+    var w = 13 + Math.random() * 4, d = 13 + Math.random() * 4, h = 14 + Math.random() * 34;
+    var cx = bx + 10 + a * 20, cz = bz + 10 + b * 20;
+    var geo = new THREE.BoxGeometry(w, h, d);
+    var mesh = new THREE.Mesh(geo, bMats[(Math.random() * bMats.length) | 0]);
+    mesh.position.set(cx, h / 2, cz);
+    scene.add(mesh);
+    var roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.6, d + 0.4), roofMat);
+    roof.position.set(cx, h + 0.3, cz);
+    scene.add(roof);
+    colliders.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
+  }
+}
+// tiang lampu jalan
+var lampMat = new THREE.MeshLambertMaterial({ color: 0x263238 });
+var bulbMat = new THREE.MeshLambertMaterial({ color: 0xfff59d });
+for (var lx = -HALF; lx <= HALF; lx += PITCH) for (var lz = -HALF; lz <= HALF; lz += PITCH) {
+  var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 6, 6), lampMat);
+  pole.position.set(lx + ROADW / 2 + 1.5, 3, lz + ROADW / 2 + 1.5);
+  scene.add(pole);
+  var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), bulbMat);
+  bulb.position.set(lx + ROADW / 2 + 1.5, 6.1, lz + ROADW / 2 + 1.5);
+  scene.add(bulb);
+}
+
+
+// ---------------- kendaraan ----------------
+function makeCar(bodyColor, police) {
+  var g = new THREE.Group();
+  var body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.55, 4.3),
+    new THREE.MeshLambertMaterial({ color: bodyColor }));
+  body.position.y = 0.55; g.add(body);
+  var cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 2.1),
+    new THREE.MeshLambertMaterial({ color: 0x1b2733 }));
+  cabin.position.set(0, 1.05, -0.25); g.add(cabin);
+  var wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 12);
+  var wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  var wheels = [];
+  [[-0.95, 1.4], [0.95, 1.4], [-0.95, -1.4], [0.95, -1.4]].forEach(function(p){
+    var w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(p[0], 0.42, p[1]);
+    g.add(w); wheels.push(w);
+  });
+  var lampGeo = new THREE.BoxGeometry(0.35, 0.18, 0.08);
+  var lampM = new THREE.MeshLambertMaterial({ color: 0xfff9c4 });
+  [-0.6, 0.6].forEach(function(x){
+    var hl = new THREE.Mesh(lampGeo, lampM);
+    hl.position.set(x, 0.62, 2.16); g.add(hl);
+  });
+  if (police) {
+    var barB = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.22, 0.5), new THREE.MeshLambertMaterial({ color: 0x2255ff }));
+    barB.position.set(-0.3, 1.42, -0.25); g.add(barB);
+    var barR = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.22, 0.5), new THREE.MeshLambertMaterial({ color: 0xff2222 }));
+    barR.position.set(0.3, 1.42, -0.25); g.add(barR);
+    var stripe = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.2, 4.32), new THREE.MeshLambertMaterial({ color: 0x2255ff }));
+    stripe.position.y = 0.45; g.add(stripe);
+  }
+  g.userData.wheels = wheels;
+  scene.add(g);
+  return g;
+}
+function spinWheels(car, speed, dt) {
+  car.userData.wheels.forEach(function(w){ w.rotation.x += speed * dt / 0.42; });
+}
+function collideBuildings(pos, r) {
+  var hit = false;
+  for (var i = 0; i < colliders.length; i++) {
+    var c = colliders[i];
+    var nx = Math.max(c.minX, Math.min(pos.x, c.maxX));
+    var nz = Math.max(c.minZ, Math.min(pos.z, c.maxZ));
+    var dx = pos.x - nx, dz = pos.z - nz;
+    var d2 = dx * dx + dz * dz;
+    if (d2 < r * r) {
+      hit = true;
+      if (d2 > 0.0001) {
+        var d = Math.sqrt(d2);
+        pos.x = nx + dx / d * r; pos.z = nz + dz / d * r;
+      } else {
+        var l = pos.x - c.minX, rr = c.maxX - pos.x, t = pos.z - c.minZ, bb = c.maxZ - pos.z;
+        var m = Math.min(l, rr, t, bb);
+        if (m === l) pos.x = c.minX - r; else if (m === rr) pos.x = c.maxX + r;
+        else if (m === t) pos.z = c.minZ - r; else pos.z = c.maxZ + r;
+      }
+    }
+  }
+  return hit;
+}
+function wrapAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+// pemain
+var player = { mesh: makeCar(0xd32f2f, false), x: -112, z: 140, yaw: Math.PI, speed: 0 };
+player.mesh.position.set(player.x, 0, player.z);
+
+// polisi (3 unit, aktif sesuai bintang)
+var police = [];
+for (var pi = 0; pi < 3; pi++) {
+  police.push({ mesh: makeCar(0xf5f5f5, true), x: 0, z: 0, yaw: 0, speed: 0, active: false });
+  police[pi].mesh.visible = false;
+}
+function spawnPolice(p) {
+  var back = 46;
+  p.x = player.x - Math.sin(player.yaw) * back + (Math.random() * 16 - 8);
+  p.z = player.z - Math.cos(player.yaw) * back + (Math.random() * 16 - 8);
+  p.x = Math.max(-HALF, Math.min(HALF, p.x));
+  p.z = Math.max(-HALF, Math.min(HALF, p.z));
+  p.yaw = player.yaw; p.speed = 10; p.active = true;
+  p.mesh.visible = true;
+}
+
+// pejalan kaki
+var pedColors = [0xffcc80, 0x81d4fa, 0xa5d6a7, 0xf48fb1, 0xfff59d, 0xce93d8, 0x80cbc4];
+var peds = [];
+function sidewalkPoint() {
+  var i = (Math.random() * N) | 0, j = (Math.random() * N) | 0;
+  var bx = -HALF + ROADW / 2 + i * PITCH, bz = -HALF + ROADW / 2 + j * PITCH;
+  var side = (Math.random() * 4) | 0, t = Math.random();
+  if (side === 0) return { x: bx + t * BLOCK, z: bz - 1.2 };
+  if (side === 1) return { x: bx + t * BLOCK, z: bz + BLOCK + 1.2 };
+  if (side === 2) return { x: bx - 1.2, z: bz + t * BLOCK };
+  return { x: bx + BLOCK + 1.2, z: bz + t * BLOCK };
+}
+for (var qi = 0; qi < 22; qi++) {
+  var grp = new THREE.Group();
+  var bd = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.95, 0.35),
+    new THREE.MeshLambertMaterial({ color: pedColors[qi % pedColors.length] }));
+  bd.position.y = 0.85; grp.add(bd);
+  var hd = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8),
+    new THREE.MeshLambertMaterial({ color: 0xffd9b3 }));
+  hd.position.y = 1.55; grp.add(hd);
+  scene.add(grp);
+  var sp = sidewalkPoint();
+  peds.push({ mesh: grp, x: sp.x, z: sp.z, tx: sp.x, tz: sp.z, state: 'walk', timer: 0, nearCd: 0 });
+}
+
+// ---------------- status permainan ----------------
+var playing = false, over = false;
+var stars = 0, money = 0, bust = 0, starTimer = 0, lastCrash = 0, startTime = 0;
+var el = function(id){ return document.getElementById(id); };
+var msgTimer = null;
+function showMsg(t, color) {
+  var m = el('msg');
+  m.textContent = t; m.style.color = color || '#ffffff'; m.style.opacity = '1';
+  if (msgTimer) clearTimeout(msgTimer);
+  msgTimer = setTimeout(function(){ m.style.opacity = '0'; }, 1400);
+}
+function addStar(why) {
+  if (stars < 5) stars++;
+  starTimer = 0;
+  showMsg(why + '  Buronan naik: ' + stars + ' bintang', '#ffd54a');
+}
+function resetGame() {
+  player.x = -112; player.z = 140; player.yaw = Math.PI; player.speed = 0;
+  stars = 0; money = 0; bust = 0; starTimer = 0; over = false;
+  police.forEach(function(p){ p.active = false; p.mesh.visible = false; });
+  startTime = Date.now();
+}
+
+// ---------------- input ----------------
+var input = { gas: false, brk: false, left: false, right: false };
+var keyMap = { KeyW: 'gas', ArrowUp: 'gas', KeyS: 'brk', ArrowDown: 'brk', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
+window.addEventListener('keydown', function(e){ var k = keyMap[e.code]; if (k) { input[k] = true; e.preventDefault(); } });
+window.addEventListener('keyup', function(e){ var k = keyMap[e.code]; if (k) { input[k] = false; e.preventDefault(); } });
+function bindBtn(id, name) {
+  var b = el(id);
+  function on(e){ input[name] = true; b.classList.add('on'); e.preventDefault(); }
+  function off(e){ input[name] = false; b.classList.remove('on'); e.preventDefault(); }
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('pointercancel', off);
+}
+bindBtn('bGas', 'gas'); bindBtn('bBrk', 'brk'); bindBtn('bL', 'left'); bindBtn('bR', 'right');
+el('playBtn').addEventListener('click', function(){
+  el('start').style.display = 'none';
+  resetGame(); playing = true;
+  showMsg('Selamat datang di Raka City!', '#7bf79b');
+});
+el('againBtn').addEventListener('click', function(){
+  el('end').style.display = 'none';
+  resetGame(); playing = true;
+});
+
+// ---------------- logika ----------------
+function stepPlayer(dt) {
+  var ACC = 24, MAXF = 40, MAXR = 12;
+  if (input.gas) player.speed += ACC * dt;
+  else if (input.brk) player.speed -= (player.speed > 0.5 ? 34 : ACC * 0.7) * dt;
+  else player.speed -= player.speed * 0.55 * dt;
+  player.speed -= player.speed * 0.25 * dt;
+  if (player.speed > MAXF) player.speed = MAXF;
+  if (player.speed < -MAXR) player.speed = -MAXR;
+  if (Math.abs(player.speed) < 0.04 && !input.gas && !input.brk) player.speed = 0;
+  var steer = (input.left ? 1 : 0) + (input.right ? -1 : 0);
+  if (player.speed !== 0) {
+    var turn = steer * Math.min(Math.abs(player.speed) / 10, 1) * 1.85 * Math.sign(player.speed);
+    player.yaw += turn * dt;
+  }
+  player.x += Math.sin(player.yaw) * player.speed * dt;
+  player.z += Math.cos(player.yaw) * player.speed * dt;
+  var LIM = HALF + ROADW - 2;
+  player.x = Math.max(-LIM, Math.min(LIM, player.x));
+  player.z = Math.max(-LIM, Math.min(LIM, player.z));
+  var pos = { x: player.x, z: player.z };
+  if (collideBuildings(pos, 1.7)) {
+    player.x = pos.x; player.z = pos.z;
+    if (Math.abs(player.speed) > 6 && Date.now() - lastCrash > 900) {
+      lastCrash = Date.now();
+      addStar('NABRAK GEDUNG!');
+    }
+    player.speed *= 0.35;
+  }
+  player.mesh.position.set(player.x, 0, player.z);
+  player.mesh.rotation.y = player.yaw;
+  spinWheels(player.mesh, player.speed, dt);
+  // ngebut dapat uang tipis-tipis
+  if (player.speed > 30) money += dt * 4;
+}
+
+function stepPolice(dt) {
+  var want = Math.min(stars, 3);
+  for (var i = 0; i < police.length; i++) {
+    var p = police[i];
+    if (i < want && !p.active) spawnPolice(p);
+    if (i >= want && p.active) { p.active = false; p.mesh.visible = false; }
+    if (!p.active) continue;
+    var tx = player.x + Math.sin(player.yaw) * player.speed * 0.35;
+    var tz = player.z + Math.cos(player.yaw) * player.speed * 0.35;
+    var dx = tx - p.x, dz = tz - p.z;
+    var dist = Math.sqrt(dx * dx + dz * dz);
+    var desired = Math.atan2(dx, dz);
+    var diff = wrapAngle(desired - p.yaw);
+    p.yaw += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+    var target = dist > 4 ? 37.5 : player.speed * 0.9;
+    p.speed += Math.max(-30 * dt, Math.min(20 * dt, target - p.speed));
+    p.x += Math.sin(p.yaw) * p.speed * dt;
+    p.z += Math.cos(p.yaw) * p.speed * dt;
+    var pos = { x: p.x, z: p.z };
+    if (collideBuildings(pos, 1.7)) { p.x = pos.x; p.z = pos.z; p.speed *= 0.5; }
+    p.mesh.position.set(p.x, 0, p.z);
+    p.mesh.rotation.y = p.yaw;
+    spinWheels(p.mesh, p.speed, dt);
+    // menangkap
+    var pdx = player.x - p.x, pdz = player.z - p.z;
+    var pdist = Math.sqrt(pdx * pdx + pdz * pdz);
+    if (pdist < 3.1) {
+      bust += dt * (Math.abs(player.speed) < 6 ? 1.5 : 0.35);
+    }
+    if (pdist < 2.3 && pdist > 0.01) {
+      var push = (2.3 - pdist) / 2;
+      player.x += pdx / pdist * push; player.z += pdz / pdist * push;
+    }
+  }
+  bust -= dt * 0.45;
+  if (bust < 0) bust = 0;
+  if (bust >= 3 && !over) {
+    over = true; playing = false;
+    var secs = Math.round((Date.now() - startTime) / 1000);
+    el('endTxt').textContent = 'Kamu bertahan ' + secs + ' detik dan mengumpulkan $' + Math.floor(money) + '. Coba lagi, jangan sampai tertangkap!';
+    el('end').style.display = 'flex';
+  }
+}
+
+function stepPeds(dt) {
+  for (var i = 0; i < peds.length; i++) {
+    var pd = peds[i];
+    if (pd.nearCd > 0) pd.nearCd -= dt;
+    var dx = player.x - pd.x, dz = player.z - pd.z;
+    var dist = Math.sqrt(dx * dx + dz * dz);
+    if (pd.state === 'down') {
+      pd.timer -= dt;
+      if (pd.timer <= 0) { pd.state = 'walk'; pd.mesh.rotation.z = 0; var np = sidewalkPoint(); pd.tx = np.x; pd.tz = np.z; }
+    } else if (playing && dist < 1.25 && Math.abs(player.speed) > 4) {
+      pd.state = 'down'; pd.timer = 2.5;
+      pd.mesh.rotation.z = Math.PI / 2;
+      addStar('MENYEREMPET ORANG!');
+      player.speed *= 0.55;
+    } else if (playing && dist < 7 && Math.abs(player.speed) > 8) {
+      // menghindar menjauhi mobil
+      var vx = -dx / (dist || 1), vz = -dz / (dist || 1);
+      if (dist < 3.4 && pd.nearCd <= 0 && Math.abs(player.speed) > 16) {
+        money += 25; pd.nearCd = 3;
+        showMsg('+$25 NYARIS!', '#7bf79b');
+      }
+      pd.x += vx * 3.4 * dt;
+      pd.z += vz * 3.4 * dt;
+      pd.mesh.rotation.y = Math.atan2(vx, vz);
+    } else {
+      // jalan ke target di trotoar
+      var mx = pd.tx - pd.x, mz = pd.tz - pd.z;
+      var md = Math.sqrt(mx * mx + mz * mz);
+      if (md < 0.6) { var np2 = sidewalkPoint(); pd.tx = np2.x; pd.tz = np2.z; }
+      else {
+        pd.x += (mx / md) * 1.25 * dt;
+        pd.z += (mz / md) * 1.25 * dt;
+        pd.mesh.rotation.y = Math.atan2(mx, mz);
+      }
+    }
+    pd.mesh.position.set(pd.x, 0, pd.z);
+  }
+}
+
+function stepCamera(dt) {
+  var fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+  var want = new THREE.Vector3(player.x - fx * 10.5, 5.2, player.z - fz * 10.5);
+  camera.position.lerp(want, 1 - Math.exp(-4.5 * dt));
+  camera.lookAt(player.x + fx * 7, 1.2, player.z + fz * 7);
+}
+
+function stepHud() {
+  el('speed').firstChild.nodeValue = String(Math.round(Math.abs(player.speed) * 3.6));
+  var s = '';
+  for (var i = 0; i < 5; i++) s += i < stars ? '\u2605' : '\u2606';
+  el('starTxt').textContent = s;
+  el('money').firstChild.nodeValue = '$' + Math.floor(money);
+  var bw = el('bustWrap');
+  if (bust > 0.05 && playing) { bw.style.display = 'block'; el('bustBar').style.width = Math.min(100, bust / 3 * 100) + '%'; }
+  else bw.style.display = 'none';
+}
+
+// bintang turun kalau lama tidak ada kejadian
+function stepStars(dt) {
+  if (stars > 0) {
+    starTimer += dt;
+    if (starTimer > 25) { stars--; starTimer = 0; if (stars > 0) showMsg('Polisi mulai kehilangan jejakmu...', '#a5d6a7'); }
+  }
+}
+
+var clock = new THREE.Clock();
+function loop() {
+  requestAnimationFrame(loop);
+  var dt = Math.min(clock.getDelta(), 0.05);
+  if (playing && !over) {
+    stepPlayer(dt);
+    stepPolice(dt);
+    stepStars(dt);
+  }
+  stepPeds(dt);
+  stepCamera(dt);
+  stepHud();
+  renderer.render(scene, camera);
+}
+loop();
+
+window.addEventListener('resize', function(){
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+})();
+</script>
+</body>
+</html>
